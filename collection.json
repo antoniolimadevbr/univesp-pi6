@@ -1,0 +1,1542 @@
+{
+  "info": {
+    "name": "API de medições acústicas (Flask + MySQL)",
+    "description": "Testa CRUD de medições com latitude/longitude, interpolação IDW, modelo de ML (Processo Gaussiano) e validações.\n\nOrdem recomendada (Collection Runner): Health → Medições → Validações → Seed → Ruído → Ruído - erros.\nAjuste a variável `baseUrl` se a API não estiver em http://localhost:5000.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "medicaoId",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Medições",
+      "item": [
+        {
+          "name": "Criar medição (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2,\n  \"latitude\": -23.55052,\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('Retorna id', () => pm.expect(j.id).to.be.a('number'));",
+                  "pm.collectionVariables.set('medicaoId', j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar medições",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('É uma lista', () => pm.expect(j).to.be.an('array'));",
+                  "pm.test('Itens têm latitude e longitude', () => {",
+                  "  if (j.length) { pm.expect(j[0]).to.have.property('latitude'); pm.expect(j[0]).to.have.property('longitude'); }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Obter medição por ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes/{{medicaoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes",
+                "{{medicaoId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('ID confere', () => pm.expect(String(j.id)).to.eql(String(pm.collectionVariables.get('medicaoId'))));",
+                  "pm.test('Coordenadas numéricas', () => { pm.expect(j.latitude).to.be.a('number'); pm.expect(j.longitude).to.be.a('number'); });",
+                  "pm.test('Tipos numéricos nos dB', () => pm.expect(j.avg_db).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Obter medição inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Validações do POST (400)",
+      "item": [
+        {
+          "name": "Sem latitude/longitude",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));",
+                  "pm.test('Lista campos ausentes', () => pm.expect(pm.response.json().campos_ausentes).to.eql(['latitude','longitude']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Latitude fora do intervalo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2,\n  \"latitude\": 95,\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Longitude fora do intervalo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2,\n  \"latitude\": -23.55052,\n  \"longitude\": -181\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Latitude não numérica",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2,\n  \"latitude\": \"abc\",\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "min_db > max_db",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 95,\n  \"max_db\": 90,\n  \"peak_db\": 96.2,\n  \"latitude\": -23.55052,\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "avg_db fora de [min, max]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 99,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2,\n  \"latitude\": -23.55052,\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "peak_db < max_db",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 80,\n  \"latitude\": -23.55052,\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Texto vazio",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"  \",\n  \"avg_db\": 81.2,\n  \"min_db\": 69.3,\n  \"max_db\": 92.7,\n  \"peak_db\": 96.2,\n  \"latitude\": -23.55052,\n  \"longitude\": -46.633308\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Retorna mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Corpo não é JSON (400)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Seed (dados para interpolação/ML)",
+      "description": "Cria 8 sensores ao redor de uma fonte em (-23.5505, -46.6333). Rode esta pasta uma vez (Collection Runner) antes da pasta 'Ruído'. Execuções repetidas duplicam medições no mesmo local; o servidor as agrupa pela média, então não quebra nada.",
+      "item": [
+        {
+          "name": "Sensor 1 (centro)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 88.0,\n  \"min_db\": 78.0,\n  \"max_db\": 97.0,\n  \"peak_db\": 101.0,\n  \"latitude\": -23.5505,\n  \"longitude\": -46.6333\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 2 (norte)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 82.5,\n  \"min_db\": 72.5,\n  \"max_db\": 91.5,\n  \"peak_db\": 95.5,\n  \"latitude\": -23.5495,\n  \"longitude\": -46.6333\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 3 (sul)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 81.8,\n  \"min_db\": 71.8,\n  \"max_db\": 90.8,\n  \"peak_db\": 94.8,\n  \"latitude\": -23.5515,\n  \"longitude\": -46.6333\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 4 (leste)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 83.1,\n  \"min_db\": 73.1,\n  \"max_db\": 92.1,\n  \"peak_db\": 96.1,\n  \"latitude\": -23.5505,\n  \"longitude\": -46.6323\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 5 (oeste)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 82.0,\n  \"min_db\": 72.0,\n  \"max_db\": 91.0,\n  \"peak_db\": 95.0,\n  \"latitude\": -23.5505,\n  \"longitude\": -46.6343\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 6 (nordeste)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 76.4,\n  \"min_db\": 66.4,\n  \"max_db\": 85.4,\n  \"peak_db\": 89.4,\n  \"latitude\": -23.5493,\n  \"longitude\": -46.6321\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 7 (sudoeste)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 75.9,\n  \"min_db\": 65.9,\n  \"max_db\": 84.9,\n  \"peak_db\": 88.9,\n  \"latitude\": -23.5517,\n  \"longitude\": -46.6345\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor 8 (noroeste)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/medicoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "medicoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ponderacao_frequencia\": \"A\",\n  \"tempo_resposta\": \"Rápido (F - 200ms)\",\n  \"calibracao\": \"Linear\",\n  \"avg_db\": 77.2,\n  \"min_db\": 67.2,\n  \"max_db\": 86.2,\n  \"peak_db\": 90.2,\n  \"latitude\": -23.5494,\n  \"longitude\": -46.6345\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ruído (interpolação e ML)",
+      "item": [
+        {
+          "name": "Estimativa no centro (IDW + ML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5505&longitude=-46.6333",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5505"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6333"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Tem IDW e ML', () => { pm.expect(j.idw.valor_db).to.be.a('number'); pm.expect(j.ml.valor_db).to.be.a('number'); });",
+                  "pm.test('ML traz desvio-padrão >= 0', () => pm.expect(j.ml.desvio_padrao_db).to.be.at.least(0));",
+                  "pm.test('Centro está coberto por sensor', () => pm.expect(j.coberto_por_sensor).to.be.true);",
+                  "pm.test('Perto da fonte o nível é alto (> 80 dB)', () => pm.expect(j.idw.valor_db).to.be.above(80));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estimativa em área não coberta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5600&longitude=-46.6200",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5600"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6200"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Não coberto por sensor', () => pm.expect(j.coberto_por_sensor).to.be.false);",
+                  "pm.test('Distância maior que o raio', () => pm.expect(j.distancia_sensor_mais_proximo_m).to.be.above(j.raio_cobertura_m));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estimativa só IDW",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5505&longitude=-46.6333&metodo=idw&potencia=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5505"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6333"
+                },
+                {
+                  "key": "metodo",
+                  "value": "idw"
+                },
+                {
+                  "key": "potencia",
+                  "value": "3"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Só IDW', () => { pm.expect(j.idw.potencia).to.eql(3); pm.expect(j).to.not.have.property('ml'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estimativa só ML (métrica peak_db)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5505&longitude=-46.6333&metodo=ml&metrica=peak_db",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5505"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6333"
+                },
+                {
+                  "key": "metodo",
+                  "value": "ml"
+                },
+                {
+                  "key": "metrica",
+                  "value": "peak_db"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Só ML', () => { pm.expect(j.metrica).to.eql('peak_db'); pm.expect(j).to.not.have.property('idw'); pm.expect(j.ml.valor_db).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grade 10x10 (ambos)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/grade?linhas=10&colunas=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "grade"
+              ],
+              "query": [
+                {
+                  "key": "linhas",
+                  "value": "10"
+                },
+                {
+                  "key": "colunas",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Matrizes 10x10', () => {",
+                  "  ['idw_db','ml_db','ml_desvio_padrao_db','distancia_sensor_m','coberta_por_sensor'].forEach(k => {",
+                  "    pm.expect(j[k], k).to.have.lengthOf(10); pm.expect(j[k][0], k).to.have.lengthOf(10);",
+                  "  });",
+                  "});",
+                  "pm.test('Há células cobertas e não cobertas', () => {",
+                  "  const flat = j.coberta_por_sensor.flat();",
+                  "  pm.expect(flat.some(Boolean)).to.be.true; pm.expect(flat.some(c => !c)).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grade com limites personalizados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/grade?linhas=5&colunas=8&lat_min=-23.553&lat_max=-23.548&lon_min=-46.636&lon_max=-46.630&metodo=idw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "grade"
+              ],
+              "query": [
+                {
+                  "key": "linhas",
+                  "value": "5"
+                },
+                {
+                  "key": "colunas",
+                  "value": "8"
+                },
+                {
+                  "key": "lat_min",
+                  "value": "-23.553"
+                },
+                {
+                  "key": "lat_max",
+                  "value": "-23.548"
+                },
+                {
+                  "key": "lon_min",
+                  "value": "-46.636"
+                },
+                {
+                  "key": "lon_max",
+                  "value": "-46.630"
+                },
+                {
+                  "key": "metodo",
+                  "value": "idw"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Dimensões 5x8', () => { pm.expect(j.idw_db).to.have.lengthOf(5); pm.expect(j.idw_db[0]).to.have.lengthOf(8); });",
+                  "pm.test('Limites respeitados', () => { pm.expect(j.latitudes[0]).to.eql(-23.553); pm.expect(j.longitudes[7]).to.eql(-46.63); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Avaliação (validação cruzada)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/avaliacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "avaliacao"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('RMSE do IDW e do ML', () => { pm.expect(j.idw.rmse_db).to.be.a('number'); pm.expect(j.ml.rmse_db).to.be.a('number'); });",
+                  "console.log('RMSE IDW:', j.idw.rmse_db, '| RMSE ML:', j.ml.rmse_db);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ruído - erros de parâmetro",
+      "item": [
+        {
+          "name": "Latitude ausente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?longitude=-46.63",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "longitude",
+                  "value": "-46.63"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Latitude fora do intervalo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=95&longitude=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "95"
+                },
+                {
+                  "key": "longitude",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Método inválido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5505&longitude=-46.6333&metodo=xyz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5505"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6333"
+                },
+                {
+                  "key": "metodo",
+                  "value": "xyz"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Métrica inválida",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5505&longitude=-46.6333&metrica=foo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5505"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6333"
+                },
+                {
+                  "key": "metrica",
+                  "value": "foo"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Potência fora do intervalo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/estimativa?latitude=-23.5505&longitude=-46.6333&potencia=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "estimativa"
+              ],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "-23.5505"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-46.6333"
+                },
+                {
+                  "key": "potencia",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grade grande demais",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/grade?linhas=500&colunas=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "grade"
+              ],
+              "query": [
+                {
+                  "key": "linhas",
+                  "value": "500"
+                },
+                {
+                  "key": "colunas",
+                  "value": "500"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Limites invertidos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ruido/grade?lat_min=-23.5&lat_max=-23.6",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ruido",
+                "grade"
+              ],
+              "query": [
+                {
+                  "key": "lat_min",
+                  "value": "-23.5"
+                },
+                {
+                  "key": "lat_max",
+                  "value": "-23.6"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Mensagem de erro', () => pm.expect(pm.response.json().erro).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
